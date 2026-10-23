@@ -60,6 +60,11 @@ check "runs as user 'agent'" test "$out" = agent
 run --entrypoint bash "$IMAGE" -c 'docker --version && docker buildx version && docker compose version && git --version && jq --version'
 check "docker, buildx, compose, git and jq are installed" test "$code" -eq 0
 
+# The agent's self-update script waits with ping; one that fails at once makes that wait spin.
+# ping needs NET_RAW, which Docker grants by default and podman does not.
+run --cap-add NET_RAW --entrypoint ping "$IMAGE" -c 1 -i 1 127.0.0.1
+check "ping works as user 'agent'" test "$code" -eq 0
+
 if ((failures > 0)); then
   echo "$failures check(s) failed" >&2
   exit 1

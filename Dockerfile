@@ -5,10 +5,11 @@ ARG DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Tools most pipeline tasks expect, plus the Docker CLI for jobs that use a mounted host socket.
+# ping is for the agent itself: its self-update script (_work/_update.sh) uses it as a sleep.
 # Versions are deliberately unpinned: every rebuild should pick up the latest Ubuntu security fixes.
 # hadolint ignore=DL3008
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl git jq unzip zip \
+ && apt-get install -y --no-install-recommends ca-certificates curl git iputils-ping jq unzip zip \
  && install -m 0755 -d /etc/apt/keyrings \
  && curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc \
  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
