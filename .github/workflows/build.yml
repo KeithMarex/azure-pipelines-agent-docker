@@ -1,0 +1,152 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Agent version to build, e.g. 5.281.0 (empty = latest stable release)
+        required: false
+  schedule:
+    - cron: '0 5 * * *' # daily: publish a new stable agent release
+    - cron: '0 6 * * 1' # weekly: rebuild without cache for Ubuntu security updates
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: shellcheck
+        run: shellcheck scripts/*.sh tests/*.sh
+      - uses: hadolint/hadolint-action@v3.5.0
+        with:
+          dockerfile: Dockerfile
+
+  build:
+    needs: lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      PUSH: ${{ github.event_name != 'pull_request' }}
+      NO_CACHE: ${{ github.event.schedule == '0 6 * * 1' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve agent release
+        id: agent
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: scripts/resolve-agent.sh "$VERSION" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/azure-pipelines-agent" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v4
+        if: env.PUSH == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      # The daily run only builds when the newest stable release is not yet what "latest" points to.
+      - name: Check whether the release is already published
+        id: check
+        if: github.event.schedule == '0 5 * * *'
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          VERSION: ${{ steps.agent.outputs.version }}
+        run: |
+          digest() { docker buildx imagetools inspect --raw "$1" 2>/dev/null | sha256sum | cut -d' ' -f1 || true; }
+          if docker buildx imagetools inspect "$IMAGE:$VERSION" >/dev/null 2>&1 \
+             && [[ "$(digest "$IMAGE:$VERSION")" == "$(digest "$IMAGE:latest")" ]]; then
+            echo "$IMAGE:$VERSION is already published as latest; nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-qemu-action@v4
+        if: steps.check.outputs.skip != 'true'
+
+      - uses: docker/setup-buildx-action@v4
+        if: steps.check.outputs.skip != 'true'
+
+      - name: Tags and labels
+        id: meta
+        if: steps.check.outputs.skip != 'true'
+        uses: docker/metadata-action@v6
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
+        with:
+          images: ${{ steps.image.outputs.name }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=${{ steps.agent.outputs.version }}
+            type=raw,value=${{ steps.agent.outputs.version }}-ubuntu24.04
+            type=raw,value=latest,enable=${{ steps.agent.outputs.latest == 'true' }}
+            type=raw,value=ubuntu24.04,enable=${{ steps.agent.outputs.latest == 'true' }}
+          labels: |
+            org.opencontainers.image.title=Azure Pipelines agent
+            org.opencontainers.image.description=Unofficial self-hosted Azure Pipelines agent for Linux (amd64, arm64)
+            org.opencontainers.image.version=${{ steps.agent.outputs.version }}
+          annotations: |
+            org.opencontainers.image.description=Unofficial self-hosted Azure Pipelines agent for Linux (amd64, arm64)
+
+      - name: Build for the smoke test (amd64)
+        if: steps.check.outputs.skip != 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          pull: true
+          no-cache: ${{ env.NO_CACHE == 'true' }}
+          tags: azure-pipelines-agent:smoke
+          build-args: |
+            AGENT_VERSION=${{ steps.agent.outputs.version }}
+            AGENT_SHA256_AMD64=${{ steps.agent.outputs.sha256_amd64 }}
+            AGENT_SHA256_ARM64=${{ steps.agent.outputs.sha256_arm64 }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test
+        if: steps.check.outputs.skip != 'true'
+        env:
+          IMAGE: azure-pipelines-agent:smoke
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.agent.outputs.version }}
+        run: tests/smoke.sh "$VERSION"
+
+      - name: Build and push (amd64, arm64)
+        if: steps.check.outputs.skip != 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ env.PUSH == 'true' }}
+          pull: true
+          no-cache: ${{ env.NO_CACHE == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          build-args: |
+            AGENT_VERSION=${{ steps.agent.outputs.version }}
+            AGENT_SHA256_AMD64=${{ steps.agent.outputs.sha256_amd64 }}
+            AGENT_SHA256_ARM64=${{ steps.agent.outputs.sha256_arm64 }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,0 +1,25 @@
+# Azure Pipelines agent stack. In Portainer: Stacks → Add stack → Repository (this repo) or Web editor,
+# and set AZP_URL, AZP_TOKEN, AZP_AGENT_NAME (and optionally AZP_POOL) under "Environment variables".
+services:
+  agent:
+    image: ghcr.io/keithmarex/azure-pipelines-agent:latest
+    restart: unless-stopped
+    # Time for a running job to stop and for the agent to remove its registration.
+    stop_grace_period: 2m
+    environment:
+      AZP_URL: ${AZP_URL:?set AZP_URL, e.g. https://dev.azure.com/<organisation>}
+      AZP_TOKEN: ${AZP_TOKEN:?set AZP_TOKEN to a PAT with the Agent Pools (Read & manage) scope}
+      AZP_POOL: ${AZP_POOL:-Default}
+      # Must be unique within the pool: an agent registering with an existing name replaces it.
+      AZP_AGENT_NAME: ${AZP_AGENT_NAME:?set AZP_AGENT_NAME to a name that is unique within the pool}
+    volumes:
+      - work:/azp/_work
+      # Uncomment (together with group_add) to let jobs use the host's Docker engine.
+      # This gives every pipeline root-equivalent access to the host.
+      # - /var/run/docker.sock:/var/run/docker.sock
+    # DOCKER_GID is the host's docker group id: getent group docker | cut -d: -f3
+    # group_add:
+    #   - ${DOCKER_GID:?set DOCKER_GID}
+
+volumes:
+  work:

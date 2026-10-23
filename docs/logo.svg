@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="title">
+  <title id="title">Azure Pipelines agent in Docker</title>
+  <rect width="256" height="256" rx="34" fill="#343A40"/>
+  <!-- A pipeline run... -->
+  <path d="M34 86 L82 128 L34 170" fill="none" stroke="#4F8AFF" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- ...in a container. -->
+  <rect x="106" y="86" width="120" height="84" rx="12" fill="#E9ECEF"/>
+  <g stroke="#343A40" stroke-width="8" stroke-linecap="round">
+    <line x1="131" y1="104" x2="131" y2="152"/>
+    <line x1="154" y1="104" x2="154" y2="152"/>
+    <line x1="177" y1="104" x2="177" y2="152"/>
+    <line x1="200" y1="104" x2="200" y2="152"/>
+  </g>
+</svg>
