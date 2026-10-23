@@ -49,7 +49,8 @@ deregister() {
   echo "warning: could not remove the agent; it stays registered as offline" >&2
 }
 
-# shellcheck disable=SC2329 # invoked by the traps below
+# Invoked by the traps below; ShellCheck reports that as SC2317 (before 0.10) or SC2329.
+# shellcheck disable=SC2317,SC2329
 shutdown() {
   trap '' INT TERM
   if [[ -n "$agent_pid" ]] && kill -0 "$agent_pid" 2>/dev/null; then
