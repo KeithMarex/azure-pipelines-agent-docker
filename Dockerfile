@@ -58,6 +58,6 @@ RUN : "${AGENT_VERSION:?build-arg AGENT_VERSION is required}" \
 COPY --chmod=0755 scripts/start.sh /azp/start.sh
 
 ENV AZP_WORK=/azp/_work
-# Numeric, so platforms that enforce runAsNonRoot can verify it ("agent").
-USER 1001
+# No USER: the entrypoint starts as root to give the agent user a mounted Docker socket's group,
+# then runs the agent and its jobs as "agent" (uid 1001).
 ENTRYPOINT ["/azp/start.sh"]

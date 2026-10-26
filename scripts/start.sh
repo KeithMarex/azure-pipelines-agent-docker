@@ -7,6 +7,25 @@ set -euo pipefail
 log() { printf '\n==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
+# The image starts as root only to give the agent user the group of a mounted Docker socket, which
+# differs per host; the script then restarts itself as "agent". Started as another user (e.g.
+# Kubernetes runAsUser), it just continues as that user.
+socket=/var/run/docker.sock
+if ((EUID == 0)); then
+  groups=agent
+  [[ -S "$socket" ]] && groups+=",$(stat -c %g "$socket")"
+  exec env HOME=/home/agent USER=agent LOGNAME=agent \
+    setpriv --reuid=agent --regid=agent --groups="$groups" -- "$0" "$@"
+fi
+
+if [[ -S "$socket" ]]; then
+  if docker --host "unix://$socket" version >/dev/null 2>&1; then
+    log "Jobs can use the Docker engine at $socket"
+  else
+    printf 'warning: %s is mounted, but user %s cannot use it\n' "$socket" "$(id -un)" >&2
+  fi
+fi
+
 [[ -n "${AZP_URL:-}" ]] || die "missing AZP_URL environment variable (e.g. https://dev.azure.com/<organisation>)"
 [[ "$AZP_URL" =~ ^https?:// ]] || die "AZP_URL must start with https:// or http://, got '$AZP_URL'"
 

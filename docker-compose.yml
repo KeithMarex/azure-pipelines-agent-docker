@@ -14,12 +14,9 @@ services:
       AZP_AGENT_NAME: ${AZP_AGENT_NAME:?set AZP_AGENT_NAME to a name that is unique within the pool}
     volumes:
       - work:/azp/_work
-      # Uncomment (together with group_add) to let jobs use the host's Docker engine.
-      # This gives every pipeline root-equivalent access to the host.
-      # - /var/run/docker.sock:/var/run/docker.sock
-    # DOCKER_GID is the host's docker group id: getent group docker | cut -d: -f3
-    # group_add:
-    #   - ${DOCKER_GID:?set DOCKER_GID}
+      # Lets jobs use the host's Docker engine; the agent gets the socket's group automatically.
+      # This gives every pipeline root-equivalent access to the host: remove it for untrusted pipelines.
+      - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
   work:

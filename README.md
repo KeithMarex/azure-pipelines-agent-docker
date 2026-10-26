@@ -27,9 +27,9 @@ how to build one yourself. This repository does that build for you and publishes
 - **linux/amd64** and **linux/arm64**
 - a tag for every agent release, published automatically; the download is verified against
   the SHA-256 in Microsoft's release notes
-- runs as a non-root user, registers on start and removes its registration on stop
-- Docker CLI with buildx and compose plugins, for jobs that use the host's Docker engine
-  ([opt-in](#using-docker-in-jobs))
+- runs the agent and its jobs as a non-root user, registers on start and removes its registration on stop
+- Docker CLI with buildx and compose plugins; jobs use the host's Docker engine when its socket is
+  mounted, without further configuration ([details](#using-docker-in-jobs))
 
 ## Credits
 
@@ -115,19 +115,20 @@ to. An update lasts until the container is recreated.
 
 ## Using Docker in jobs
 
-The image contains the Docker CLI but no Docker engine. To let jobs build and run containers,
-mount the host's socket and add the agent user to the host's `docker` group:
+The image contains the Docker CLI but no Docker engine. Jobs build and run containers with the
+host's engine through its socket, which [`docker-compose.yml`](docker-compose.yml) mounts by default.
+With `docker run`, add `-v /var/run/docker.sock:/var/run/docker.sock`.
 
-```yaml
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    group_add:
-      - "${DOCKER_GID}" # getent group docker | cut -d: -f3
-```
+The socket's group differs per host, so the container starts as root, adds that group to the
+`agent` user and then runs the agent and its jobs as `agent`. The container log says whether
+jobs can use the engine.
 
-**Every pipeline that runs on this agent then has root-equivalent access to the host.** Only do
-this for pools that run trusted pipelines. Also note that bind mounts in `docker run -v` are
-resolved on the host, not inside the agent container.
+**Every pipeline that runs on this agent then has root-equivalent access to the host.** For pools
+that run untrusted pipelines, remove the socket from the compose file. Also note that bind mounts
+in `docker run -v` are resolved on the host, not inside the agent container.
+
+Where containers may not start as root (e.g. Kubernetes with `runAsNonRoot`), run the container as
+uid 1001 and add the socket's group yourself (`supplementalGroups`).
 
 ## Adding tools
 
@@ -135,14 +136,12 @@ Tasks expect their tools on the `PATH`. Extend the image for your stack:
 
 ```dockerfile
 FROM ghcr.io/keithmarex/azure-pipelines-agent:latest
-USER root
 RUN apt-get update \
  && apt-get install -y --no-install-recommends openjdk-21-jdk-headless \
  && rm -rf /var/lib/apt/lists/*
-USER agent
 ```
 
-The agent scans its environment for capabilities when it starts, so newly installed tools
+Leave out `USER`: the entrypoint switches to the `agent` user itself. The agent scans its environment for capabilities when it starts, so newly installed tools
 show up automatically.
 
 ## Security notes
